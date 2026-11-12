@@ -3,9 +3,24 @@
 import argparse
 import ctypes
 import ctypes.util
+import math
 import struct
 import sys
 from pathlib import Path
+
+
+MAX_IMAGE_PIXELS = 64 * 1024 * 1024
+MAX_IMAGE_DIMENSION = 32768
+
+
+def round_half_up(value):
+    return math.floor(value + 0.5)
+
+
+def validate_dimensions(width, height):
+    if (not width or not height or width > MAX_IMAGE_DIMENSION
+            or height > MAX_IMAGE_DIMENSION or width * height > MAX_IMAGE_PIXELS):
+        raise ValueError("image dimensions exceed the supported limit")
 
 
 class PngImage(ctypes.Structure):
@@ -37,16 +52,19 @@ def png_rgba(path: Path):
     image = PngImage()
     image.version = 1
     if not begin(ctypes.byref(image), str(path).encode()):
-        raise RuntimeError("libpng could not read the input file")
-    image.format = 0x03  # PNG_FORMAT_RGBA
-    pixels = (ctypes.c_ubyte * (image.width * image.height * 4))()
-    if not finish(ctypes.byref(image), None, pixels, 0, None):
-        message = bytes(image.message).split(b"\0", 1)[0].decode(errors="replace")
         free(ctypes.byref(image))
-        raise RuntimeError(f"libpng could not decode the input: {message}")
-    width, height = image.width, image.height
-    free(ctypes.byref(image))
-    return width, height, bytes(pixels)
+        raise RuntimeError("libpng could not read the input file")
+    try:
+        validate_dimensions(image.width, image.height)
+        image.format = 0x03  # PNG_FORMAT_RGBA
+        pixels = (ctypes.c_ubyte * (image.width * image.height * 4))()
+        if not finish(ctypes.byref(image), None, pixels, 0, None):
+            message = bytes(image.message).split(b"\0", 1)[0].decode(errors="replace")
+            raise RuntimeError(f"libpng could not decode the input: {message}")
+        width, height = image.width, image.height
+        return width, height, bytes(pixels)
+    finally:
+        free(ctypes.byref(image))
 
 
 def image_rgba(path: Path):
@@ -59,38 +77,72 @@ def image_rgba(path: Path):
             "JPEG input requires Pillow; install it with 'python3 -m pip install Pillow'"
         ) from exc
     with Image.open(path) as image:
+        validate_dimensions(*image.size)
         rgba = image.convert("RGBA")
         return rgba.width, rgba.height, rgba.tobytes()
 
 
 def resize_rgba(src, sw, sh, dw, dh):
-    # Bilinear resampling with premultiplied-alpha interpolation to avoid
-    # dark fringes around transparent icon edges.
+    # Area averaging when shrinking and bilinear interpolation when enlarging.
     output = bytearray(dw * dh * 4)
+    scale_x, scale_y = sw / dw, sh / dh
     for y in range(dh):
-        fy = (y + .5) * sh / dh - .5
-        y0 = max(0, min(sh - 1, int(fy)))
-        y1 = min(sh - 1, y0 + 1)
-        wy = max(0.0, min(1.0, fy - int(fy)))
+        top, bottom = y * scale_y, (y + 1) * scale_y
+        if scale_y > 1:
+            first_y, last_y = int(top), min(sh, math.ceil(bottom))
+        else:
+            fy = max(0.0, min(sh - 1, (y + .5) * scale_y - .5))
+            first_y, last_y = int(fy), min(sh, int(fy) + 2)
         for x in range(dw):
-            fx = (x + .5) * sw / dw - .5
-            x0 = max(0, min(sw - 1, int(fx)))
-            x1 = min(sw - 1, x0 + 1)
-            wx = max(0.0, min(1.0, fx - int(fx)))
-            samples = []
-            for xx, yy, weight in ((x0,y0,(1-wx)*(1-wy)), (x1,y0,wx*(1-wy)),
-                                   (x0,y1,(1-wx)*wy), (x1,y1,wx*wy)):
-                i = (yy * sw + xx) * 4
-                a = src[i+3] / 255.0
-                samples.append((src[i] * a, src[i+1] * a, src[i+2] * a, src[i+3], weight))
-            alpha = sum(s[3] * s[4] for s in samples)
+            left, right = x * scale_x, (x + 1) * scale_x
+            if scale_x > 1:
+                first_x, last_x = int(left), min(sw, math.ceil(right))
+            else:
+                fx = max(0.0, min(sw - 1, (x + .5) * scale_x - .5))
+                first_x, last_x = int(fx), min(sw, int(fx) + 2)
+            alpha = 0.0
+            premul = [0.0, 0.0, 0.0]
+            for sy in range(first_y, last_y):
+                if scale_y > 1:
+                    wy = max(0.0, min(bottom, sy + 1) - max(top, sy)) / scale_y
+                else:
+                    fy = max(0.0, min(sh - 1, (y + .5) * scale_y - .5))
+                    frac = fy - math.floor(fy)
+                    wy = 1 - frac if sy == first_y else frac
+                for sx in range(first_x, last_x):
+                    if scale_x > 1:
+                        wx = max(0.0, min(right, sx + 1) - max(left, sx)) / scale_x
+                    else:
+                        fx = max(0.0, min(sw - 1, (x + .5) * scale_x - .5))
+                        frac = fx - math.floor(fx)
+                        wx = 1 - frac if sx == first_x else frac
+                    weight = wx * wy
+                    i = (sy * sw + sx) * 4
+                    a = src[i + 3] / 255.0
+                    alpha += src[i + 3] * weight
+                    for c in range(3):
+                        premul[c] += src[i + c] * a * weight
             oi = (y * dw + x) * 4
             if alpha > 0:
                 for c in range(3):
-                    premul = sum(s[c] * s[4] for s in samples)
-                    output[oi+c] = max(0, min(255, round(premul * 255 / alpha)))
-            output[oi+3] = max(0, min(255, round(alpha)))
+                    output[oi + c] = max(0, min(255, round_half_up(premul[c] * 255 / alpha)))
+            output[oi + 3] = max(0, min(255, round_half_up(alpha)))
     return bytes(output)
+
+
+def fit_rgba(src, sw, sh, size):
+    scale = size / max(sw, sh)
+    width = max(1, round_half_up(sw * scale))
+    height = max(1, round_half_up(sh * scale))
+    resized = resize_rgba(src, sw, sh, width, height)
+    canvas = bytearray(size * size * 4)
+    x_offset, y_offset = (size - width) // 2, (size - height) // 2
+    for y in range(height):
+        source_start = y * width * 4
+        destination_start = ((y + y_offset) * size + x_offset) * 4
+        canvas[destination_start:destination_start + width * 4] = \
+            resized[source_start:source_start + width * 4]
+    return bytes(canvas)
 
 
 def dib_image(rgba, size):
@@ -128,9 +180,12 @@ def main(argv=None):
         if source.suffix.lower() not in {".png", ".jpg", ".jpeg"}:
             raise ValueError("input must have a .png, .jpg, or .jpeg extension")
         sw, sh, pixels = image_rgba(source)
+        validate_dimensions(sw, sh)
         sizes = (256, 128, 64, 48, 32, 16)
-        images = [(size, dib_image(resize_rgba(pixels, sw, sh, size, size), size))
-                  for size in sizes]
+        base = fit_rgba(pixels, sw, sh, sizes[0])
+        images = [(size, dib_image(
+            base if size == sizes[0] else resize_rgba(base, sizes[0], sizes[0], size, size), size
+        )) for size in sizes]
         offset = 6 + 16 * len(images)
         directory = bytearray(struct.pack('<HHH', 0, 1, len(images)))
         payload = bytearray()

@@ -22,6 +22,23 @@ Windows builds use the system Windows Imaging Component (WIC); cross-compiling f
 ```sh
 ./png2icon image.png       # Creates image.ico
 ./png2icon photo.jpg app.ico
+python3 png2icon.py image.png
 ```
 
-On Windows, run `png2icon.exe` with the same arguments. Use `make clean` to remove the built executable(s).
+The Python script uses libpng for PNG files and Pillow for JPEG files. Install Pillow
+with `python3 -m pip install Pillow` if you need Python JPEG support.
+
+Both converters preserve the source aspect ratio, center the image on a transparent
+square, and create 256, 128, 64, 48, 32, and 16 px entries. Shrinking uses area
+averaging to retain detail in small icons. Inputs are limited to 32,768 px per
+dimension and 64 megapixels.
+
+On Windows, run `png2icon.exe` with the same arguments. Use `make clean` to remove
+the built executable(s). Run regression tests after building with:
+
+```sh
+PNG2ICON_BIN=./png2icon python3 -m unittest discover -s tests -v
+```
+
+The regression tests require Pillow (`python3 -m pip install Pillow`) in addition
+to the C++ build dependencies.
