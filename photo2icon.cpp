@@ -1,6 +1,6 @@
 // Convert PNG/JPEG images to a multi-resolution Windows ICO file.
 // Linux/Termux use libpng and libjpeg; Windows uses the built-in WIC decoder.
-// Build on Linux/Termux: c++ -std=c++17 -O2 png2icon.cpp -lpng -ljpeg -o png2icon
+// Build on Linux/Termux: c++ -std=c++17 -O2 photo2icon.cpp -lpng -ljpeg -o photo2icon
 #include <algorithm>
 #include <cmath>
 #include <cctype>

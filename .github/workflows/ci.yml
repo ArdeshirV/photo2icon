@@ -16,7 +16,7 @@ jobs:
       - name: Build
         run: make
       - name: Test
-        run: PNG2ICON_BIN=./png2icon python3 -m unittest discover -s tests -v
+        run: PHOTO2ICON_BIN=./photo2icon python3 -m unittest discover -s tests -v
 
   windows:
     runs-on: windows-latest

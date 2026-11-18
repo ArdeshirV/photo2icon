@@ -22,6 +22,7 @@
 *.dylib
 *.dll
 *.so.*
+photo2icon
 
 # Fortran module files
 *.mod

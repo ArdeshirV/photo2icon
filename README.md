@@ -1,4 +1,4 @@
-# png2icon
+# photo2icon
 
 Convert a PNG or JPEG image into a Windows `.ico` file containing common icon sizes (16–256 px). This is useful for Windows applications and shortcuts that need one icon file to look sharp at different display sizes.
 
@@ -20,9 +20,9 @@ Windows builds use the system Windows Imaging Component (WIC); cross-compiling f
 ## Use
 
 ```sh
-./png2icon image.png       # Creates image.ico
-./png2icon photo.jpg app.ico
-python3 png2icon.py image.png
+./photo2icon image.png       # Creates image.ico
+./photo2icon photo.jpg app.ico
+python3 photo2icon.py image.png
 ```
 
 The Python script uses libpng for PNG files and Pillow for JPEG files. Install Pillow
@@ -33,11 +33,11 @@ square, and create 256, 128, 64, 48, 32, and 16 px entries. Shrinking uses area
 averaging to retain detail in small icons. Inputs are limited to 32,768 px per
 dimension and 64 megapixels.
 
-On Windows, run `png2icon.exe` with the same arguments. Use `make clean` to remove
+On Windows, run `photo2icon.exe` with the same arguments. Use `make clean` to remove
 the built executable(s). Run regression tests after building with:
 
 ```sh
-PNG2ICON_BIN=./png2icon python3 -m unittest discover -s tests -v
+PHOTO2ICON_BIN=./photo2icon python3 -m unittest discover -s tests -v
 ```
 
 The regression tests require Pillow (`python3 -m pip install Pillow`) in addition

@@ -10,8 +10,8 @@ from pathlib import Path
 from PIL import Image
 
 ROOT = Path(__file__).resolve().parents[1]
-PYTHON_CONVERTER = ROOT / "png2icon.py"
-CPP_CONVERTER = os.environ.get("PNG2ICON_BIN", str(ROOT / "png2icon"))
+PYTHON_CONVERTER = ROOT / "photo2icon.py"
+CPP_CONVERTER = os.environ.get("PHOTO2ICON_BIN", str(ROOT / "photo2icon"))
 
 
 def png_chunk(kind, data):
@@ -169,11 +169,11 @@ class ConverterTests(unittest.TestCase):
     def test_rejects_dimensions_over_limit(self):
         sys.path.insert(0, str(ROOT))
         try:
-            import png2icon
+            import photo2icon
             with self.assertRaises(ValueError):
-                png2icon.validate_dimensions(32769, 1)
+                photo2icon.validate_dimensions(32769, 1)
             with self.assertRaises(ValueError):
-                png2icon.validate_dimensions(8192, 8192 + 1)
+                photo2icon.validate_dimensions(8192, 8192 + 1)
         finally:
             sys.path.pop(0)
 
